@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2D Kinematic Vector Simulator</title>
+  <link rel="stylesheet" href="./styles.css" type="text/css">
+</head>
+<body>
+
+  <header class="header">
+    <div class="logo-box">KINEMATICS // LAB</div>
+    <h1>2D PROJECTILE SIMULATOR</h1>
+    <div class="status-badge" id="simStatus">READY</div>
+  </header>
+
+  <main class="main-layout">
+    
+    <!-- CONTROLS PANEL -->
+    <aside class="control-panel">
+      
+      <!-- SCENARIO SELECTOR -->
+      <section class="card">
+        <h2 class="card-title">01. SCENARIO CONFIG</h2>
+        <div class="form-group">
+          <label for="scenarioSelect">ENVIRONMENT TYPE</label>
+          <select id="scenarioSelect" class="neo-input">
+            <option value="flat">Standard Flat Ground</option>
+            <option value="incline_up" selected>Incline Plane (Ascending)</option>
+            <option value="incline_down">Incline Plane (Descending)</option>
+            <option value="incline_bounded">Bounded Ramp Target</option>
+            <option value="barrier_wall">Vertical Barrier Elastic Impact</option>
+          </select>
+        </div>
+      </section>
+
+      <!-- INITIAL PARAMETERS -->
+      <section class="card">
+        <h2 class="card-title">02. INITIAL CONDITIONS</h2>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label for="velocity">VELOCITY (u in m/s)</label>
+            <input type="number" id="velocity" class="neo-input" value="45" min="1" max="150" step="1">
+          </div>
+          <div class="form-group">
+            <label for="angle">LAUNCH ANGLE (theta in deg)</label>
+            <input type="number" id="angle" class="neo-input" value="40" min="-89" max="89" step="1">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="launchX">START X (m)</label>
+            <input type="number" id="launchX" class="neo-input" value="0" step="1">
+          </div>
+          <div class="form-group">
+            <label for="launchY">START Y (m)</label>
+            <input type="number" id="launchY" class="neo-input" value="0" step="1">
+          </div>
+        </div>
+
+        <!-- SCENARIO DEPENDENT DYNAMIC FIELDS -->
+        <div id="dynamicParams">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="inclineAngle" id="inclineLabel">SLOPE ANGLE (alpha in deg)</label>
+              <input type="number" id="inclineAngle" class="neo-input" value="15" min="-60" max="60" step="1">
+            </div>
+            <div class="form-group" id="rampLengthGroup">
+              <label for="rampLength">RAMP LENGTH (m)</label>
+              <input type="number" id="rampLength" class="neo-input" value="120" min="10" step="5">
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ENVIRONMENT & DYNAMICS -->
+      <section class="card">
+        <h2 class="card-title">03. ENVIRONMENT</h2>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label for="gravityPreset">CELESTIAL PRESET</label>
+            <select id="gravityPreset" class="neo-input">
+              <option value="9.81" selected>Earth (9.81 m/s²)</option>
+              <option value="1.62">Moon (1.62 m/s²)</option>
+              <option value="3.71">Mars (3.71 m/s²)</option>
+              <option value="24.79">Jupiter (24.79 m/s²)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="dragCoeff">AIR DRAG (k)</label>
+            <input type="number" id="dragCoeff" class="neo-input" value="0.000" min="0" max="0.05" step="0.001">
+          </div>
+        </div>
+
+        <div class="checkbox-group">
+          <label class="neo-checkbox">
+            <input type="checkbox" id="showVectors" checked>
+            <span>SHOW VELOCITY / FORCE VECTORS</span>
+          </label>
+        </div>
+      </section>
+
+      <!-- CONTROL BUTTONS -->
+      <div class="button-grid">
+        <button id="btnLaunch" class="neo-btn neo-btn-primary">LAUNCH</button>
+        <button id="btnPause" class="neo-btn neo-btn-secondary">PAUSE</button>
+        <button id="btnReset" class="neo-btn neo-btn-accent">RESET</button>
+        <button id="btnExport" class="neo-btn neo-btn-dark">CSV EXPORT</button>
+      </div>
+
+    </aside>
+
+    <!-- VIEWPORT & TELEMETRY -->
+    <section class="viewport-panel">
+      
+      <!-- REALTIME STATS BAR -->
+      <div class="telemetry-bar">
+        <div class="stat-box">
+          <span class="stat-label">TIME</span>
+          <span class="stat-value" id="valTime">0.00 s</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-label">POS X</span>
+          <span class="stat-value" id="valX">0.00 m</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-label">POS Y</span>
+          <span class="stat-value" id="valY">0.00 m</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-label">VELOCITY</span>
+          <span class="stat-value" id="valVel">0.00 m/s</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-label">APOGEE</span>
+          <span class="stat-value" id="valApogee">0.00 m</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-label">RANGE</span>
+          <span class="stat-value" id="valRange">0.00 m</span>
+        </div>
+      </div>
+
+      <!-- CANVAS SIMULATION VIEWPORT WITH HORIZONTAL SCROLLER -->
+      <div class="canvas-viewport" id="canvasViewport">
+        <div class="canvas-scroll-container" id="canvasScrollContainer">
+          <canvas id="simCanvas"></canvas>
+        </div>
+        <div class="canvas-overlay" id="canvasOverlay">Hover over trajectory to inspect point metrics</div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <script src="./app.js" defer></script>
+</body>
+</html>

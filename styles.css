@@ -1,0 +1,258 @@
+/* NEO-BRUTALISM THEME STYLESHEET */
+
+:root {
+  --bg: #f4efdf;
+  --panel-bg: #ffffff;
+  --text: #0d0d0d;
+  --border: 3px solid #000000;
+  --shadow: 4px 4px 0px #000000;
+  --shadow-sm: 2px 2px 0px #000000;
+  
+  --primary: #ff5964;
+  --secondary: #35a7ff;
+  --accent: #ffe600;
+  --dark: #1e1e24;
+  --success: #38b000;
+  
+  --font: "JetBrains Mono", "Courier New", monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font);
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  padding: 16px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* HEADER */
+.header {
+  background: var(--accent);
+  border: var(--border);
+  box-shadow: var(--shadow);
+  padding: 14px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.logo-box {
+  background: #000;
+  color: #fff;
+  padding: 4px 8px;
+  font-weight: bold;
+}
+
+.header h1 {
+  font-size: 1.4rem;
+  letter-spacing: -1px;
+}
+
+.status-badge {
+  background: #fff;
+  border: var(--border);
+  padding: 4px 10px;
+  font-weight: bold;
+  font-size: 0.85rem;
+}
+
+/* LAYOUT */
+.main-layout {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 16px;
+  flex: 1;
+}
+
+/* CARDS & PANELS */
+.card {
+  background: var(--panel-bg);
+  border: var(--border);
+  box-shadow: var(--shadow);
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.card-title {
+  font-size: 0.95rem;
+  margin-bottom: 12px;
+  background: var(--text);
+  color: #fff;
+  display: inline-block;
+  padding: 2px 6px;
+}
+
+/* FORMS & INPUTS */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  flex: 1;
+}
+
+.form-row {
+  display: flex;
+  gap: 8px;
+}
+
+label {
+  font-size: 0.75rem;
+  font-weight: bold;
+}
+
+.neo-input {
+  border: var(--border);
+  padding: 8px;
+  font-weight: bold;
+  font-size: 0.9rem;
+  background: #fff;
+  outline: none;
+}
+
+.neo-input:focus {
+  background: #eef8ff;
+}
+
+.checkbox-group {
+  margin-top: 8px;
+}
+
+.neo-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.neo-checkbox input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+}
+
+/* BUTTONS */
+.button-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.neo-btn {
+  border: var(--border);
+  box-shadow: var(--shadow-sm);
+  padding: 10px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: transform 0.05s, box-shadow 0.05s;
+}
+
+.neo-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0px 0px 0px #000;
+}
+
+.neo-btn-primary { background: var(--primary); color: #fff; }
+.neo-btn-secondary { background: var(--secondary); color: #fff; }
+.neo-btn-accent { background: var(--accent); }
+.neo-btn-dark { background: var(--dark); color: #fff; }
+
+/* VIEWPORT & TELEMETRY */
+.viewport-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.telemetry-bar {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+
+.stat-box {
+  background: #fff;
+  border: var(--border);
+  box-shadow: var(--shadow-sm);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-label {
+  font-size: 0.65rem;
+  color: #666;
+  font-weight: bold;
+}
+
+.stat-value {
+  font-size: 1rem;
+  font-weight: bold;
+  margin-top: 2px;
+}
+
+/* HORIZONTAL SCROLLABLE CANVAS VIEWPORT */
+.canvas-viewport {
+  position: relative;
+  flex: 1;
+  border: var(--border);
+  box-shadow: var(--shadow);
+  background: #ffffff;
+  min-height: 480px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+}
+
+/* CUSTOM NEO-BRUTAL SCROLLBAR */
+.canvas-viewport::-webkit-scrollbar {
+  height: 14px;
+}
+
+.canvas-viewport::-webkit-scrollbar-track {
+  background: var(--bg);
+  border-top: var(--border);
+}
+
+.canvas-viewport::-webkit-scrollbar-thumb {
+  background: var(--accent);
+  border: 2px solid #000;
+}
+
+.canvas-scroll-container {
+  min-width: 2500px; /* Extended horizontal world scroll space */
+  height: 100%;
+}
+
+canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.canvas-overlay {
+  position: sticky;
+  left: 10px;
+  bottom: 10px;
+  width: fit-content;
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  font-size: 0.75rem;
+  padding: 6px 10px;
+  border: 1px solid #fff;
+  margin-left: 10px;
+  margin-bottom: 10px;
+  z-index: 10;
+}
