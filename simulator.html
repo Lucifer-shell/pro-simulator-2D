@@ -63,13 +63,22 @@
         <!-- SCENARIO DEPENDENT DYNAMIC FIELDS -->
         <div id="dynamicParams">
           <div class="form-row">
-            <div class="form-group">
+            <div class="form-group" id="inclineAngleGroup">
               <label for="inclineAngle" id="inclineLabel">SLOPE ANGLE (alpha in deg)</label>
               <input type="number" id="inclineAngle" class="neo-input" value="15" min="-60" max="60" step="1">
             </div>
             <div class="form-group" id="rampLengthGroup">
-              <label for="rampLength">RAMP LENGTH (m)</label>
+              <label for="rampLength" id="rampLengthLabel">RAMP LENGTH (m)</label>
               <input type="number" id="rampLength" class="neo-input" value="120" min="10" step="5">
+            </div>
+          </div>
+          <div class="form-row" id="rampSideRow" style="display:none;">
+            <div class="form-group" style="flex:1;">
+              <label for="rampSide">LAUNCH POSITION ON RAMP</label>
+              <select id="rampSide" class="neo-input">
+                <option value="bottom" selected>Bottom of Ramp</option>
+                <option value="top">Top of Ramp</option>
+              </select>
             </div>
           </div>
         </div>
@@ -111,6 +120,29 @@
         <button id="btnExport" class="neo-btn neo-btn-dark">CSV EXPORT</button>
       </div>
 
+      <!-- CAMERA CONTROLS -->
+      <div class="card" style="margin-top:14px;">
+        <h2 class="card-title">04. CAMERA / VIEW</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>ZOOM</label>
+            <div class="zoom-row">
+              <button id="btnZoomOut" class="neo-btn neo-btn-accent zoom-btn">−</button>
+              <span id="zoomLevel" class="zoom-readout">4.0x</span>
+              <button id="btnZoomIn" class="neo-btn neo-btn-accent zoom-btn">+</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>AUTO-FOLLOW</label>
+            <label class="neo-checkbox" style="margin-top:8px;">
+              <input type="checkbox" id="autoFollow" checked>
+              <span>FOLLOW PROJECTILE</span>
+            </label>
+          </div>
+        </div>
+        <button id="btnCenter" class="neo-btn neo-btn-dark" style="width:100%;">RECENTER VIEW</button>
+      </div>
+
     </aside>
 
     <!-- VIEWPORT & TELEMETRY -->
@@ -144,12 +176,15 @@
         </div>
       </div>
 
-      <!-- CANVAS SIMULATION VIEWPORT WITH HORIZONTAL SCROLLER -->
+      <!-- CANVAS SIMULATION VIEWPORT WITH 2D PANNING -->
       <div class="canvas-viewport" id="canvasViewport">
         <div class="canvas-scroll-container" id="canvasScrollContainer">
           <canvas id="simCanvas"></canvas>
         </div>
-        <div class="canvas-overlay" id="canvasOverlay">Hover over trajectory to inspect point metrics</div>
+        <div class="canvas-overlay" id="canvasOverlay">
+          Drag to pan • Scroll to move • Hover trajectory for telemetry
+        </div>
+        <div class="canvas-hint" id="canvasHint">DRAG / WHEEL TO PAN</div>
       </div>
 
     </section>

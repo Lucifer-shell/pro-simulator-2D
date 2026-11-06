@@ -1,6 +1,11 @@
 /**
  * 2D PROJECTILE SIMULATOR ENGINE
- * Pure JS Implementation with Horizontal Auto-Scroll Camera
+ * Pure JS — World-space camera with full 2D pan/zoom.
+ *
+ * Coordinate model:
+ *   - World coords: meters, origin (0,0) at ground level.
+ *   - Screen coords: canvas pixels (CSS pixels; DPR handled separately).
+ *   - Camera: { x, y (world center), scale (px per meter) }.
  */
 
 class PhysicsEngine {
@@ -8,17 +13,21 @@ class PhysicsEngine {
     this.canvas = document.getElementById('simCanvas');
     this.viewport = document.getElementById('canvasViewport');
     this.ctx = this.canvas.getContext('2d');
-    
-    // Simulation state variables
+
+    // Simulation state
     this.running = false;
     this.paused = false;
     this.animationFrame = null;
-    
-    this.t = 0;
-    this.dt = 0.016; // Time step (~60 FPS)
-    this.scale = 4;   // Canvas Pixels per Meter
-    this.origin = { x: 50, y: 400 };
 
+    this.t = 0;
+    this.dt = 0.008;              // base step; sub-stepped in loop
+    this.baseScale = 4;           // px per meter
+    this.scale = this.baseScale;
+
+    // Camera in world coords (center of view)
+    this.camera = { x: 40, y: 40, scale: this.baseScale };
+
+    // Projectile world state
     this.position = { x: 0, y: 0 };
     this.velocity = { x: 0, y: 0 };
     this.trajectory = [];
@@ -26,84 +35,295 @@ class PhysicsEngine {
     this.params = {};
     this.metrics = { apogee: 0, range: 0 };
 
+    this.dragging = false;
+    this.dragStart = null;
+    this.cameraStart = null;
+
+    this.cssWidth = 1;
+    this.cssHeight = 1;
+    this._camInitialized = false;
+
     this.initEventListeners();
     this.resizeCanvas();
     this.updateScenarioConfig();
+    this.updateZoomReadout();
   }
 
+  /* ============================================================
+   * CANVAS + CAMERA MANAGEMENT
+   * ============================================================ */
+
   resizeCanvas() {
-    this.canvas.width = this.canvas.parentElement.clientWidth;
-    this.canvas.height = this.viewport.clientHeight - 20;
-    this.origin.y = this.canvas.height - 60;
+    const rect = this.viewport.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    this.cssWidth = Math.max(1, rect.width);
+    this.cssHeight = Math.max(1, rect.height);
+
+    this.canvas.width = Math.floor(this.cssWidth * dpr);
+    this.canvas.height = Math.floor(this.cssHeight * dpr);
+    this.canvas.style.width = this.cssWidth + 'px';
+    this.canvas.style.height = this.cssHeight + 'px';
+
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    if (!this._camInitialized) {
+      this.centerCameraOnOrigin();
+      this._camInitialized = true;
+    }
     this.draw();
   }
 
+  centerCameraOnOrigin() {
+    const pxWidth = this.cssWidth;
+    const pxHeight = this.cssHeight;
+    this.camera.scale = this.baseScale;
+
+    // world x=0 at ~15% of view width
+    this.camera.x = (0.35 * pxWidth) / this.camera.scale;
+    // ground y=0 at ~75% down
+    this.camera.y = (0.25 * pxHeight) / this.camera.scale;
+  }
+
+  worldToScreen(wx, wy) {
+    const s = this.camera.scale;
+    const cx = this.cssWidth / 2;
+    const cy = this.cssHeight / 2;
+    return {
+      x: (wx - this.camera.x) * s + cx,
+      y: (this.camera.y - wy) * s + cy,
+    };
+  }
+
+  screenToWorld(sx, sy) {
+    const s = this.camera.scale;
+    const cx = this.cssWidth / 2;
+    const cy = this.cssHeight / 2;
+    return {
+      x: (sx - cx) / s + this.camera.x,
+      y: this.camera.y - (sy - cy) / s,
+    };
+  }
+
+  zoomAt(screenX, screenY, factor) {
+    const worldBefore = this.screenToWorld(screenX, screenY);
+    const newScale = Math.min(40, Math.max(0.5, this.camera.scale * factor));
+    this.camera.scale = newScale;
+    const worldAfter = this.screenToWorld(screenX, screenY);
+    this.camera.x += worldBefore.x - worldAfter.x;
+    this.camera.y += worldBefore.y - worldAfter.y;
+    this.updateZoomReadout();
+    this.draw();
+  }
+
+  updateZoomReadout() {
+    const el = document.getElementById('zoomLevel');
+    if (el) el.innerText = this.camera.scale.toFixed(1) + 'x';
+  }
+
+  /* ============================================================
+   * EVENT LISTENERS
+   * ============================================================ */
+
   initEventListeners() {
     window.addEventListener('resize', () => this.resizeCanvas());
-    
-    document.getElementById('scenarioSelect').addEventListener('change', () => this.updateScenarioConfig());
+
+    document.getElementById('scenarioSelect')
+      .addEventListener('change', () => this.updateScenarioConfig());
     document.getElementById('btnLaunch').addEventListener('click', () => this.start());
     document.getElementById('btnPause').addEventListener('click', () => this.togglePause());
     document.getElementById('btnReset').addEventListener('click', () => this.reset());
     document.getElementById('btnExport').addEventListener('click', () => this.exportCSV());
 
-    // Dynamic Hover Telemetry
+    // Camera pan (drag)
+    this.viewport.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      this.dragging = true;
+      this.viewport.classList.add('dragging');
+      this.dragStart = { x: e.clientX, y: e.clientY };
+      this.cameraStart = { x: this.camera.x, y: this.camera.y };
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (this.dragging) {
+        const dx = e.clientX - this.dragStart.x;
+        const dy = e.clientY - this.dragStart.y;
+        this.camera.x = this.cameraStart.x - dx / this.camera.scale;
+        this.camera.y = this.cameraStart.y + dy / this.camera.scale;
+        this.draw();
+      }
+    });
+    window.addEventListener('mouseup', () => {
+      if (this.dragging) {
+        this.dragging = false;
+        this.viewport.classList.remove('dragging');
+      }
+    });
+
+    // Wheel zoom (cursor-anchored)
+    this.viewport.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const rect = this.canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+      this.zoomAt(mx, my, factor);
+    }, { passive: false });
+
+    // Hover telemetry
     this.canvas.addEventListener('mousemove', (e) => this.handleCanvasHover(e));
+
+    // Zoom buttons
+    document.getElementById('btnZoomIn').addEventListener('click', () => {
+      this.zoomAt(this.cssWidth / 2, this.cssHeight / 2, 1.2);
+    });
+    document.getElementById('btnZoomOut').addEventListener('click', () => {
+      this.zoomAt(this.cssWidth / 2, this.cssHeight / 2, 1 / 1.2);
+    });
+    document.getElementById('btnCenter').addEventListener('click', () => {
+      this.centerCameraOnOrigin();
+      this.draw();
+    });
   }
+
+  /* ============================================================
+   * SCENARIO CONFIG (UI)
+   * ============================================================ */
 
   updateScenarioConfig() {
     const scenario = document.getElementById('scenarioSelect').value;
-    const inclineLabel = document.getElementById('inclineLabel');
-    const rampGroup = document.getElementById('rampLengthGroup');
 
-    if (scenario.includes('incline')) {
-      inclineLabel.parentElement.style.display = 'flex';
-      rampGroup.style.display = scenario === 'incline_bounded' ? 'flex' : 'none';
+    const inclineGroup = document.getElementById('inclineAngleGroup');
+    const rampLenGroup = document.getElementById('rampLengthGroup');
+    const rampSideRow = document.getElementById('rampSideRow');
+    const rampLenLabel = document.getElementById('rampLengthLabel');
+
+    inclineGroup.style.display = 'flex';
+    rampLenGroup.style.display = 'flex';
+    rampSideRow.style.display = 'none';
+    rampLenLabel.innerText = 'RAMP LENGTH (m)';
+
+    if (scenario === 'flat') {
+      inclineGroup.style.display = 'none';
+      rampLenGroup.style.display = 'none';
     } else if (scenario === 'barrier_wall') {
-      inclineLabel.parentElement.style.display = 'none';
-      rampGroup.style.display = 'flex';
-      document.getElementById('rampLength').previousElementSibling.innerText = 'WALL DISTANCE (m)';
-    } else {
-      inclineLabel.parentElement.style.display = 'none';
-      rampGroup.style.display = 'none';
+      inclineGroup.style.display = 'none';
+      rampLenGroup.style.display = 'flex';
+      rampLenLabel.innerText = 'WALL DISTANCE (m)';
+    } else if (scenario === 'incline_bounded' ||
+               scenario === 'incline_up' ||
+               scenario === 'incline_down') {
+      rampSideRow.style.display = 'flex';
     }
+
     this.reset();
   }
 
   readParams() {
     const scenario = document.getElementById('scenarioSelect').value;
-    const u = parseFloat(document.getElementById('velocity').value);
-    const theta = parseFloat(document.getElementById('angle').value) * (Math.PI / 180);
-    const alpha = parseFloat(document.getElementById('inclineAngle').value) * (Math.PI / 180);
+    const u = parseFloat(document.getElementById('velocity').value) || 0;
+    const theta = (parseFloat(document.getElementById('angle').value) || 0) * Math.PI / 180;
+    const alpha = (parseFloat(document.getElementById('inclineAngle').value) || 0) * Math.PI / 180;
 
     return {
       scenario,
       u,
       theta,
       alpha,
-      x0: parseFloat(document.getElementById('launchX').value),
-      y0: parseFloat(document.getElementById('launchY').value),
-      g: parseFloat(document.getElementById('gravityPreset').value),
-      k: parseFloat(document.getElementById('dragCoeff').value),
-      rampLen: parseFloat(document.getElementById('rampLength').value),
-      showVectors: document.getElementById('showVectors').checked
+      x0: parseFloat(document.getElementById('launchX').value) || 0,
+      y0: parseFloat(document.getElementById('launchY').value) || 0,
+      g: parseFloat(document.getElementById('gravityPreset').value) || 9.81,
+      k: parseFloat(document.getElementById('dragCoeff').value) || 0,
+      rampLen: parseFloat(document.getElementById('rampLength').value) || 120,
+      rampSide: document.getElementById('rampSide').value,
+      showVectors: document.getElementById('showVectors').checked,
+      autoFollow: document.getElementById('autoFollow').checked,
     };
   }
+
+  /* ============================================================
+   * RAMP GEOMETRY
+   * ============================================================ */
+
+  getRampSegment() {
+    const { scenario, alpha, rampLen } = this.params;
+    if (!scenario || !scenario.includes('incline')) return null;
+
+    const a = alpha;
+
+    if (scenario === 'incline_up') {
+      const x2 = rampLen * Math.cos(a);
+      const y2 = rampLen * Math.sin(a);
+      return { x1: 0, y1: 0, x2, y2, angle: a, length: rampLen };
+    }
+    if (scenario === 'incline_down') {
+      // Descending ramp: top-left high, bottom-right at ground.
+      const topY = rampLen * Math.sin(a);
+      const bottomX = rampLen * Math.cos(a);
+      return {
+        x1: 0, y1: topY,
+        x2: bottomX, y2: 0,
+        angle: -a,
+        length: rampLen,
+        descending: true,
+      };
+    }
+    if (scenario === 'incline_bounded') {
+      const x2 = rampLen * Math.cos(a);
+      const y2 = rampLen * Math.sin(a);
+      return { x1: 0, y1: 0, x2, y2, angle: a, length: rampLen, bounded: true };
+    }
+    return null;
+  }
+
+  /* ============================================================
+   * SIMULATION CONTROL
+   * ============================================================ */
 
   start() {
     this.reset();
     this.params = this.readParams();
-    this.position = { x: this.params.x0, y: this.params.y0 };
-    this.velocity = { 
-      x: this.params.u * Math.cos(this.params.theta), 
-      y: this.params.u * Math.sin(this.params.theta) 
+
+    let launchX = this.params.x0;
+    let launchY = this.params.y0;
+
+    const ramp = this.getRampSegment();
+    if (ramp) {
+      if (this.params.rampSide === 'top') {
+        if (this.params.scenario === 'incline_down') {
+          launchX = ramp.x1;
+          launchY = ramp.y1;
+        } else {
+          launchX = ramp.x2;
+          launchY = ramp.y2;
+        }
+      } else {
+        if (this.params.scenario === 'incline_down') {
+          launchX = ramp.x2;
+          launchY = ramp.y2;
+        } else {
+          launchX = ramp.x1;
+          launchY = ramp.y1;
+        }
+      }
+    }
+
+    this.params.effLaunchX = launchX;
+    this.params.effLaunchY = launchY;
+
+    this.position = { x: launchX, y: launchY };
+    this.velocity = {
+      x: this.params.u * Math.cos(this.params.theta),
+      y: this.params.u * Math.sin(this.params.theta),
     };
+
+    // Prefill trajectory so hover works from t=0
+    this.trajectory.push({
+      t: 0, x: launchX, y: launchY,
+      vx: this.velocity.x, vy: this.velocity.y,
+    });
 
     this.running = true;
     this.paused = false;
-    document.getElementById('simStatus').innerText = 'RUNNING';
-    document.getElementById('simStatus').style.background = '#38b000';
-    document.getElementById('simStatus').style.color = '#fff';
+    this.setStatus('RUNNING', '#38b000', '#fff');
 
     this.loop();
   }
@@ -112,76 +332,102 @@ class PhysicsEngine {
     if (!this.running) return;
     this.paused = !this.paused;
     document.getElementById('btnPause').innerText = this.paused ? 'RESUME' : 'PAUSE';
-    document.getElementById('simStatus').innerText = this.paused ? 'PAUSED' : 'RUNNING';
+    this.setStatus(
+      this.paused ? 'PAUSED' : 'RUNNING',
+      this.paused ? '#ffe600' : '#38b000',
+      this.paused ? '#000' : '#fff'
+    );
     if (!this.paused) this.loop();
   }
 
   reset() {
     this.running = false;
     this.paused = false;
-    cancelAnimationFrame(this.animationFrame);
+    if (this.animationFrame) cancelAnimationFrame(this.animationFrame);
+    this.animationFrame = null;
     this.t = 0;
     this.position = { x: 0, y: 0 };
     this.velocity = { x: 0, y: 0 };
     this.trajectory = [];
     this.metrics = { apogee: 0, range: 0 };
-    
-    document.getElementById('simStatus').innerText = 'READY';
-    document.getElementById('simStatus').style.background = '#fff';
-    document.getElementById('simStatus').style.color = '#000';
+
+    this.setStatus('READY', '#fff', '#000');
     document.getElementById('btnPause').innerText = 'PAUSE';
 
-    this.viewport.scrollLeft = 0;
     this.updateUI(0, 0, 0, 0, 0, 0);
+    document.getElementById('canvasOverlay').innerText =
+      'Drag to pan • Scroll to move • Hover trajectory for telemetry';
     this.draw();
+  }
+
+  setStatus(text, bg, color) {
+    const el = document.getElementById('simStatus');
+    el.innerText = text;
+    el.style.background = bg;
+    el.style.color = color;
   }
 
   loop() {
     if (!this.running || this.paused) return;
 
-    for (let i = 0; i < 2; i++) { // Sub-stepping for precision
+    // Sub-step for accuracy
+    const subSteps = 2;
+    for (let i = 0; i < subSteps; i++) {
       this.stepPhysics();
+      if (this.checkCollisions()) break;
     }
 
+    if (this.params.autoFollow) this.followProjectile();
     this.draw();
-    this.autoScrollCamera();
+
     this.updateUI(
-      this.t, 
-      this.position.x, 
-      this.position.y, 
+      this.t,
+      this.position.x,
+      this.position.y,
       Math.hypot(this.velocity.x, this.velocity.y),
       this.metrics.apogee,
       this.metrics.range
     );
 
-    if (this.checkCollisions()) {
-      this.running = false;
-      document.getElementById('simStatus').innerText = 'FINISHED';
-      document.getElementById('simStatus').style.background = '#35a7ff';
+    if (!this.running) {
+      this.setStatus('FINISHED', '#35a7ff', '#fff');
       return;
     }
 
     this.animationFrame = requestAnimationFrame(() => this.loop());
   }
 
-  autoScrollCamera() {
-    const projPixelX = this.origin.x + (this.position.x * this.scale);
-    const viewportRight = this.viewport.scrollLeft + this.viewport.clientWidth - 150;
-    
-    if (projPixelX > viewportRight) {
-      this.viewport.scrollLeft = projPixelX - (this.viewport.clientWidth / 2);
+  followProjectile() {
+    const s = this.camera.scale;
+    const margin = 120; // px from edge
+
+    const scr = this.worldToScreen(this.position.x, this.position.y);
+
+    let moved = false;
+    if (scr.x > this.cssWidth - margin) {
+      this.camera.x += (scr.x - (this.cssWidth - margin)) / s;
+      moved = true;
+    } else if (scr.x < margin) {
+      this.camera.x -= (margin - scr.x) / s;
+      moved = true;
     }
+    if (scr.y > this.cssHeight - margin) {
+      this.camera.y -= (scr.y - (this.cssHeight - margin)) / s;
+      moved = true;
+    } else if (scr.y < margin) {
+      this.camera.y += (margin - scr.y) / s;
+      moved = true;
+    }
+    if (moved) this.draw();
   }
 
   stepPhysics() {
     const { g, k } = this.params;
     const speed = Math.hypot(this.velocity.x, this.velocity.y);
-    
-    // Drag forces: F_d = k * v^2
+
     const ax = -k * speed * this.velocity.x;
     const ay = -g - (k * speed * this.velocity.y);
 
-    // Euler Integration
     this.velocity.x += ax * this.dt;
     this.velocity.y += ay * this.dt;
 
@@ -190,69 +436,130 @@ class PhysicsEngine {
 
     this.t += this.dt;
 
-    // Track metrics
     if (this.position.y > this.metrics.apogee) this.metrics.apogee = this.position.y;
     this.metrics.range = this.position.x;
 
-    this.trajectory.push({ 
-      t: this.t, 
-      x: this.position.x, 
+    this.trajectory.push({
+      t: this.t,
+      x: this.position.x,
       y: this.position.y,
       vx: this.velocity.x,
-      vy: this.velocity.y 
+      vy: this.velocity.y,
     });
   }
 
+  /* ============================================================
+   * COLLISION
+   * ============================================================ */
+
   checkCollisions() {
+    if (this.t < 0.05) return false;
     const { scenario, alpha, rampLen } = this.params;
     const { x, y } = this.position;
 
-    // Standard Flat Ground
-    if (scenario === 'flat' && y <= 0 && this.t > 0.05) {
-      this.position.y = 0;
-      return true;
+    // Flat ground
+    if (scenario === 'flat') {
+      if (y <= 0) {
+        this.position.y = 0;
+        return this.finish();
+      }
+      return false;
     }
 
-    // Unlimited Incline Planes
-    if (scenario === 'incline_up' && y <= x * Math.tan(alpha) && this.t > 0.05) {
-      return true;
-    }
-    if (scenario === 'incline_down' && y <= x * Math.tan(-alpha) && this.t > 0.05) {
-      return true;
+    // Unlimited incline up
+    if (scenario === 'incline_up') {
+      // Ramp line: y = x * tan(alpha) for x >= 0, else ground y=0
+      if (x >= 0) {
+        const rampY = x * Math.tan(alpha);
+        if (y <= rampY) {
+          this.position.y = rampY;
+          return this.finish();
+        }
+      } else {
+        if (y <= 0) {
+          this.position.y = 0;
+          return this.finish();
+        }
+      }
+      return false;
     }
 
-    // Bounded Ramp Target
+    // Unlimited incline down — ramp line descends from (0, top) to ground on the right
+    if (scenario === 'incline_down') {
+      const ramp = this.getRampSegment();
+      if (!ramp) return false;
+      // If we're under the descending line and above ground, land on it
+      const slope = (ramp.y2 - ramp.y1) / (ramp.x2 - ramp.x1); // negative
+      const rampYAtX = ramp.y1 + slope * x;
+      if (x >= ramp.x1 && x <= ramp.x2) {
+        if (y <= rampYAtX) {
+          this.position.y = rampYAtX;
+          return this.finish();
+        }
+      } else if (x > ramp.x2) {
+        if (y <= 0) {
+          this.position.y = 0;
+          return this.finish();
+        }
+      } else {
+        // left of ramp top — hit ground at y=0? Only if goes below 0
+        if (y <= 0) {
+          this.position.y = 0;
+          return this.finish();
+        }
+      }
+      return false;
+    }
+
+    // Bounded ramp target
     if (scenario === 'incline_bounded') {
       const rampMaxX = rampLen * Math.cos(alpha);
-      const rampY = x * Math.tan(alpha);
-      
-      if (x <= rampMaxX && y <= rampY && this.t > 0.05) return true; // Landed on slope
-      if (x > rampMaxX && y <= 0) return true; // Overshot slope to flat ground
+      const rampYAtX = x * Math.tan(alpha);
+      if (x >= 0 && x <= rampMaxX && y <= rampYAtX) {
+        this.position.y = rampYAtX;
+        return this.finish();
+      }
+      if (y <= 0) {
+        this.position.y = 0;
+        return this.finish();
+      }
+      return false;
     }
 
-    // Vertical Barrier Elastic Wall Collision
+    // Vertical barrier wall
     if (scenario === 'barrier_wall') {
       if (x >= rampLen && this.velocity.x > 0) {
-        this.velocity.x = -this.velocity.x * 0.8; // Restitution factor 0.8
+        this.velocity.x = -this.velocity.x * 0.8;
         this.position.x = rampLen;
       }
-      if (y <= 0 && this.t > 0.05) return true;
+      if (y <= 0) {
+        this.position.y = 0;
+        return this.finish();
+      }
+      return false;
     }
 
     return false;
   }
 
+  finish() {
+    this.running = false;
+    return true;
+  }
+
+  /* ============================================================
+   * RENDERING
+   * ============================================================ */
+
   draw() {
     const ctx = this.ctx;
-    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.clearRect(0, 0, this.cssWidth, this.cssHeight);
 
     this.drawGrid();
     this.drawEnvironment();
     this.drawTrajectory();
-
-    if (this.running || this.trajectory.length > 0) {
-      this.drawProjectile();
-    }
+    this.drawProjectile();
+    this.drawAxes();
   }
 
   drawGrid() {
@@ -260,76 +567,124 @@ class PhysicsEngine {
     ctx.strokeStyle = '#e5e5e5';
     ctx.lineWidth = 1;
 
-    const gridSize = 50; // pixels
-    for (let x = 0; x < this.canvas.width; x += gridSize) {
+    // Grid spacing in world meters that maps to ~50px on screen
+    let worldStep = 50 / this.camera.scale;
+    // Round to nice number
+    const niceSteps = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
+    let chosen = niceSteps[0];
+    for (const s of niceSteps) {
+      if (s >= worldStep) { chosen = s; break; }
+      chosen = s;
+    }
+    const stepPx = chosen * this.camera.scale;
+
+    // world range visible
+    const topLeft = this.screenToWorld(0, 0);
+    const bottomRight = this.screenToWorld(this.cssWidth, this.cssHeight);
+
+    const startX = Math.floor(topLeft.x / chosen) * chosen;
+    const endX = bottomRight.x;
+    for (let wx = startX; wx <= endX; wx += chosen) {
+      const p = this.worldToScreen(wx, 0);
       ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, this.canvas.height);
+      ctx.moveTo(p.x, 0);
+      ctx.lineTo(p.x, this.cssHeight);
       ctx.stroke();
     }
-    for (let y = 0; y < this.canvas.height; y += gridSize) {
+
+    const startY = Math.floor(bottomRight.y / chosen) * chosen;
+    const endY = topLeft.y;
+    for (let wy = startY; wy <= endY; wy += chosen) {
+      const p = this.worldToScreen(0, wy);
       ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(this.canvas.width, y);
+      ctx.moveTo(0, p.y);
+      ctx.lineTo(this.cssWidth, p.y);
       ctx.stroke();
     }
+  }
+
+  drawAxes() {
+    const ctx = this.ctx;
+    // Ground line y=0
+    const groundPx = this.worldToScreen(0, 0);
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, groundPx.y);
+    ctx.lineTo(this.cssWidth, groundPx.y);
+    ctx.stroke();
+
+    // Y-axis at x=0
+    const yAxis = this.worldToScreen(0, 0);
+    ctx.beginPath();
+    ctx.moveTo(yAxis.x, 0);
+    ctx.lineTo(yAxis.x, this.cssHeight);
+    ctx.stroke();
   }
 
   drawEnvironment() {
     const ctx = this.ctx;
     const { scenario, alpha, rampLen } = this.params;
-    const ox = this.origin.x;
-    const oy = this.origin.y;
+    if (!scenario) return;
 
-    // Ground Line
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(0, oy);
-    ctx.lineTo(this.canvas.width, oy);
-    ctx.stroke();
+    if (scenario.includes('incline')) {
+      const ramp = this.getRampSegment();
+      if (ramp) {
+        const p1 = this.worldToScreen(ramp.x1, ramp.y1);
+        const p2 = this.worldToScreen(ramp.x2, ramp.y2);
+        const groundL = this.worldToScreen(ramp.x1, 0);
+        const groundR = this.worldToScreen(ramp.x2, 0);
 
-    // Draw Inclines / Obstacles
-    if (scenario && scenario.includes('incline')) {
-      ctx.fillStyle = 'rgba(255, 230, 0, 0.3)';
-      ctx.beginPath();
-      ctx.moveTo(ox, oy);
+        ctx.fillStyle = 'rgba(255, 230, 0, 0.35)';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 3;
 
-      const length = scenario === 'incline_bounded' ? rampLen * this.scale : 2000;
-      const angle = scenario === 'incline_down' ? -alpha : alpha;
-      
-      const endX = ox + length * Math.cos(angle);
-      const endY = oy - length * Math.sin(angle);
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.lineTo(groundR.x, groundR.y);
+        ctx.lineTo(groundL.x, groundL.y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
 
-      ctx.lineTo(endX, endY);
-      ctx.lineTo(endX, oy);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
+        // Hatch slope line
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+      }
     }
 
     if (scenario === 'barrier_wall') {
-      const wallX = ox + rampLen * this.scale;
+      const wallBottom = this.worldToScreen(rampLen, 0);
+      const wallTop = this.worldToScreen(rampLen, 60);
+      const wallW = 12;
+
       ctx.fillStyle = '#ff5964';
-      ctx.fillRect(wallX, oy - 300, 12, 300);
-      ctx.strokeRect(wallX, oy - 300, 12, 300);
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 3;
+
+      ctx.beginPath();
+      ctx.rect(wallBottom.x, wallTop.y, wallW, wallBottom.y - wallTop.y);
+      ctx.fill();
+      ctx.stroke();
     }
   }
 
   drawTrajectory() {
     if (this.trajectory.length < 2) return;
-
     const ctx = this.ctx;
+
     ctx.beginPath();
     ctx.strokeStyle = '#ff5964';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 2.5;
     ctx.setLineDash([6, 6]);
 
     this.trajectory.forEach((pt, idx) => {
-      const cx = this.origin.x + pt.x * this.scale;
-      const cy = this.origin.y - pt.y * this.scale;
-      if (idx === 0) ctx.moveTo(cx, cy);
-      else ctx.lineTo(cx, cy);
+      const p = this.worldToScreen(pt.x, pt.y);
+      if (idx === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
     });
 
     ctx.stroke();
@@ -337,25 +692,32 @@ class PhysicsEngine {
   }
 
   drawProjectile() {
-    const ctx = this.ctx;
-    const cx = this.origin.x + this.position.x * this.scale;
-    const cy = this.origin.y - this.position.y * this.scale;
+    if (this.trajectory.length === 0 && !this.running) return;
 
-    // Draw Projectile Ball
+    const ctx = this.ctx;
+    const p = this.worldToScreen(this.position.x, this.position.y);
+
     ctx.fillStyle = '#35a7ff';
     ctx.beginPath();
-    ctx.arc(cx, cy, 8, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
     ctx.fill();
     ctx.lineWidth = 2;
     ctx.strokeStyle = '#000';
     ctx.stroke();
 
-    // Draw Velocity & Force Vector Overlay Arrows
     if (this.params.showVectors && this.running) {
-      // Velocity Vector (Blue Arrow)
-      this.drawArrow(cx, cy, cx + this.velocity.x * 1.5, cy - this.velocity.y * 1.5, '#35a7ff');
-      // Gravity Vector (Red Arrow Down)
-      this.drawArrow(cx, cy, cx, cy + this.params.g * 3, '#ff5964');
+      const scaleV = 1.5;
+      this.drawArrow(
+        p.x, p.y,
+        p.x + this.velocity.x * scaleV,
+        p.y - this.velocity.y * scaleV,
+        '#35a7ff'
+      );
+      this.drawArrow(
+        p.x, p.y,
+        p.x, p.y + this.params.g * 3,
+        '#ff5964'
+      );
     }
   }
 
@@ -375,31 +737,53 @@ class PhysicsEngine {
 
     ctx.beginPath();
     ctx.moveTo(toX, toY);
-    ctx.lineTo(toX - headlen * Math.cos(angle - Math.PI / 6), toY - headlen * Math.sin(angle - Math.PI / 6));
-    ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI / 6), toY - headlen * Math.sin(angle + Math.PI / 6));
+    ctx.lineTo(
+      toX - headlen * Math.cos(angle - Math.PI / 6),
+      toY - headlen * Math.sin(angle - Math.PI / 6)
+    );
+    ctx.lineTo(
+      toX - headlen * Math.cos(angle + Math.PI / 6),
+      toY - headlen * Math.sin(angle + Math.PI / 6)
+    );
     ctx.closePath();
     ctx.fill();
   }
 
+  /* ============================================================
+   * HOVER TELEMETRY
+   * ============================================================ */
+
   handleCanvasHover(e) {
     if (this.trajectory.length === 0) return;
-    
     const rect = this.canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
 
     const overlay = document.getElementById('canvasOverlay');
 
-    const hoveredPt = this.trajectory.find(pt => {
-      const cx = this.origin.x + pt.x * this.scale;
-      const cy = this.origin.y - pt.y * this.scale;
-      return Math.hypot(mx - cx, my - cy) < 10;
-    });
+    let closest = null;
+    let bestDist = 12;
+    for (const pt of this.trajectory) {
+      const sp = this.worldToScreen(pt.x, pt.y);
+      const d = Math.hypot(mx - sp.x, my - sp.y);
+      if (d < bestDist) {
+        bestDist = d;
+        closest = pt;
+      }
+    }
 
-    if (hoveredPt) {
-      overlay.innerText = `t: ${hoveredPt.t.toFixed(2)}s | x: ${hoveredPt.x.toFixed(1)}m | y: ${hoveredPt.y.toFixed(1)}m | v: ${Math.hypot(hoveredPt.vx, hoveredPt.vy).toFixed(1)}m/s`;
+    if (closest) {
+      overlay.innerText =
+        `t: ${closest.t.toFixed(2)}s | x: ${closest.x.toFixed(1)}m | y: ${closest.y.toFixed(1)}m | v: ${Math.hypot(closest.vx, closest.vy).toFixed(1)}m/s`;
+    } else {
+      overlay.innerText =
+        'Drag to pan • Scroll to move • Hover trajectory for telemetry';
     }
   }
+
+  /* ============================================================
+   * UI UPDATES
+   * ============================================================ */
 
   updateUI(t, x, y, v, apogee, range) {
     document.getElementById('valTime').innerText = `${t.toFixed(2)} s`;
@@ -410,11 +794,18 @@ class PhysicsEngine {
     document.getElementById('valRange').innerText = `${range.toFixed(2)} m`;
   }
 
+  /* ============================================================
+   * CSV EXPORT
+   * ============================================================ */
+
   exportCSV() {
-    if (this.trajectory.length === 0) return alert('No simulation data available to export.');
+    if (this.trajectory.length === 0) {
+      alert('No simulation data available to export.');
+      return;
+    }
 
     let csv = 'Time(s),Position_X(m),Position_Y(m),Velocity_X(m/s),Velocity_Y(m/s)\n';
-    this.trajectory.forEach(pt => {
+    this.trajectory.forEach((pt) => {
       csv += `${pt.t.toFixed(3)},${pt.x.toFixed(3)},${pt.y.toFixed(3)},${pt.vx.toFixed(3)},${pt.vy.toFixed(3)}\n`;
     });
 
@@ -428,7 +819,7 @@ class PhysicsEngine {
   }
 }
 
-// Instantiate Engine on DOM Load
+/* Instantiate on DOM load */
 document.addEventListener('DOMContentLoaded', () => {
   window.simEngine = new PhysicsEngine();
 });

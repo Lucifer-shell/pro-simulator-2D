@@ -71,6 +71,13 @@ body {
   grid-template-columns: 360px 1fr;
   gap: 16px;
   flex: 1;
+  min-height: 0;
+}
+
+.control-panel {
+  overflow-y: auto;
+  padding-right: 4px;
+  max-height: calc(100vh - 140px);
 }
 
 /* CARDS & PANELS */
@@ -98,6 +105,7 @@ body {
   gap: 4px;
   margin-bottom: 10px;
   flex: 1;
+  min-width: 0;
 }
 
 .form-row {
@@ -117,6 +125,7 @@ label {
   font-size: 0.9rem;
   background: #fff;
   outline: none;
+  width: 100%;
 }
 
 .neo-input:focus {
@@ -156,6 +165,7 @@ label {
   font-weight: bold;
   cursor: pointer;
   transition: transform 0.05s, box-shadow 0.05s;
+  font-family: var(--font);
 }
 
 .neo-btn:active {
@@ -168,12 +178,36 @@ label {
 .neo-btn-accent { background: var(--accent); }
 .neo-btn-dark { background: var(--dark); color: #fff; }
 
+/* ZOOM CONTROLS */
+.zoom-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.zoom-btn {
+  padding: 4px 10px;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.zoom-readout {
+  flex: 1;
+  text-align: center;
+  font-weight: bold;
+  border: var(--border);
+  background: #fff;
+  padding: 6px 4px;
+  font-size: 0.85rem;
+}
+
 /* VIEWPORT & TELEMETRY */
 .viewport-panel {
   display: flex;
   flex-direction: column;
   gap: 12px;
   overflow: hidden;
+  min-height: 0;
 }
 
 .telemetry-bar {
@@ -189,6 +223,7 @@ label {
   padding: 8px;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .stat-label {
@@ -201,9 +236,12 @@ label {
   font-size: 1rem;
   font-weight: bold;
   margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* HORIZONTAL SCROLLABLE CANVAS VIEWPORT */
+/* 2D PANNING CANVAS VIEWPORT */
 .canvas-viewport {
   position: relative;
   flex: 1;
@@ -211,28 +249,20 @@ label {
   box-shadow: var(--shadow);
   background: #ffffff;
   min-height: 480px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-behavior: smooth;
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
 }
 
-/* CUSTOM NEO-BRUTAL SCROLLBAR */
-.canvas-viewport::-webkit-scrollbar {
-  height: 14px;
-}
-
-.canvas-viewport::-webkit-scrollbar-track {
-  background: var(--bg);
-  border-top: var(--border);
-}
-
-.canvas-viewport::-webkit-scrollbar-thumb {
-  background: var(--accent);
-  border: 2px solid #000;
+.canvas-viewport.dragging {
+  cursor: grabbing;
 }
 
 .canvas-scroll-container {
-  min-width: 2500px; /* Extended horizontal world scroll space */
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
   height: 100%;
 }
 
@@ -243,16 +273,56 @@ canvas {
 }
 
 .canvas-overlay {
-  position: sticky;
+  position: absolute;
   left: 10px;
   bottom: 10px;
   width: fit-content;
+  max-width: calc(100% - 20px);
   background: rgba(0, 0, 0, 0.85);
   color: #fff;
   font-size: 0.75rem;
   padding: 6px 10px;
   border: 1px solid #fff;
-  margin-left: 10px;
-  margin-bottom: 10px;
   z-index: 10;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.canvas-hint {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: var(--accent);
+  border: 2px solid #000;
+  color: #000;
+  font-size: 0.65rem;
+  font-weight: bold;
+  padding: 3px 8px;
+  z-index: 10;
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+/* Scrollbar polish for control panel */
+.control-panel::-webkit-scrollbar {
+  width: 10px;
+}
+.control-panel::-webkit-scrollbar-track {
+  background: var(--bg);
+  border: 2px solid #000;
+}
+.control-panel::-webkit-scrollbar-thumb {
+  background: var(--accent);
+  border: 2px solid #000;
+}
+
+@media (max-width: 1100px) {
+  .main-layout {
+    grid-template-columns: 320px 1fr;
+  }
+  .telemetry-bar {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
